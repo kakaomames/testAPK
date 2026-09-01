@@ -1,10 +1,10 @@
-name: Build APK
+name: Build APK via Raw CLI Tools
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-raw:
     runs-on: ubuntu-latest
 
     steps:
@@ -20,20 +20,73 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Grant execute permission for gradlew
+      - name: Build APK with Raw Tools
         run: |
-          if [ -f "gradlew" ]; then
-            chmod +x gradlew
-          else
-            gradle wrapper
+          # 1. パスの設定
+          ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}
+          BUILD_TOOLS_VERSION=$(ls $ANDROID_SDK_ROOT/build-tools | sort -V | tail -n 1)
+          BT_PATH="$ANDROID_SDK_ROOT/build-tools/$BUILD_TOOLS_VERSION"
+          PLATFORM_JAR="$ANDROID_SDK_ROOT/platforms/android-34/android.jar"
+          
+          echo "Using Build Tools: $BT_PATH"
+          echo "Using Platform Jar: $PLATFORM_JAR"
+
+          mkdir -p build/gen build/obj build/apk
+
+          # 2. リソースのコンパイル (aapt2)
+          echo "--- Compiling Resources ---"
+          $BT_PATH/aapt2 compile --dir res -o build/gen/resources.zip
+
+          # 3. リソースのリンク & AndroidManifestの処理
+          echo "--- Linking Resources ---"
+          $BT_PATH/aapt2 link -o build/apk/unsigned.apk \
+            -I $PLATFORM_JAR \
+            --manifest AndroidManifest.xml \
+            build/gen/resources.zip \
+            --auto-add-overlay
+
+          # 4. Javaのコンパイル (javac)
+          echo "--- Compiling Java Sources ---"
+          find . -name "*.java" > build/sources.txt
+          javac -source 1.8 -target 1.8 \
+            -bootclasspath $PLATFORM_JAR \
+            -d build/obj @build/sources.txt
+
+          # 5. DEX変換 (d8)
+          echo "--- Converting to Dalvik Executable (DEX) ---"
+          find build/obj -name "*.class" > build/classes.txt
+          $BT_PATH/d8 --output build/apk/ --lib $PLATFORM_JAR @build/classes.txt
+
+          # 6. classes.dex を APK に追加
+          echo "--- Packing DEX into APK ---"
+          cd build/apk
+          zip -u unsigned.apk classes.dex
+          
+          # assets があれば追加
+          if [ -d "../../assets" ]; then
+            cd ../..
+            cd assets && zip -r ../build/apk/unsigned.apk . && cd ..
           fi
 
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug
+          # 7. デバッグ署名 (apksigner / 簡易署名)
+          echo "--- Signing APK ---"
+          # debug.keystore が無ければ生成
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkey -v -keystore ~/.android/debug.keystore \
+              -storepass android -alias androiddebugkey -keypass android \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+          $BT_PATH/apksigner sign --ks ~/.android/debug.keystore \
+            --ks-pass pass:android \
+            build/apk/unsigned.apk
+
+          echo "--- Build Completed Successfully! ---"
+          mv build/apk/unsigned.apk ../../app-release.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
-          path: build/outputs/apk/debug/*.apk
-
+          name: app-cli-debug
+          path: app-release.apk
