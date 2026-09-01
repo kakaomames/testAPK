@@ -51,12 +51,23 @@ jobs:
           find . -name "*.java" > build/sources.txt
           javac -cp android.jar -d build/obj @build/sources.txt
 
-          # 3. dex化
+                    # 3. dex化 (d8 を使用)
           echo "--- Converting to Dalvik Executable ---"
           cd build/obj
           jar cvf classes.jar *
-          dx --dex --output=../apk/classes.dex classes.jar
+          
+          # Android SDK 内の d8 を使って確実に dex 化
+          # (あらかじめ SDK の build-tools から d8 を見つけるか、グローバルの d8 を呼ぶ)
+          ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}
+          D8_PATH=$(find "$ANDROID_SDK_ROOT/build-tools" -name "d8" | sort | tail -n 1)
+          
+          if [ -n "$D8_PATH" ]; then
+            "$D8_PATH" --output ../apk/ classes.jar
+          else
+            d8 --output ../apk/ classes.jar
+          fi
           cd ../..
+
 
           # 4. APKに追加 & 署名
           cd build/apk
