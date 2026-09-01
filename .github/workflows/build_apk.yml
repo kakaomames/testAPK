@@ -23,7 +23,14 @@ jobs:
       - name: Install Build Tools via apt
         run: |
           sudo apt-get update
-          sudo apt-get install -y aapt apksigner dx
+          sudo apt-get install -y aapt apksigner dx curl
+
+      - name: Download Android API Jar
+        run: |
+          mkdir -p build/sdk
+          # 例として安定の Android 31 または 34 などの android.jar を直接取得
+          curl -L -o android.jar https://raw.githubusercontent.com/Sable/android-platforms/master/android-31/android.jar
+
 
       - name: Build APK via Raw Commands
         run: |
@@ -31,10 +38,7 @@ jobs:
 
           # 正しい Android SDK の android.jar パスを指定
           ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}
-          PLATFORM_JAR="$ANDROID_SDK_ROOT/platforms/android-30/android.jar"
-          if [ ! -f "$PLATFORM_JAR" ]; then
-            PLATFORM_JAR="$ANDROID_SDK_ROOT/platforms/android-34/android.jar"
-          fi
+          PLATFORM_JAR="android.jar"
 
           echo "Using Android Jar: $PLATFORM_JAR"
 
@@ -45,7 +49,7 @@ jobs:
           # 2. Ja          # 2. Javaのコンパイル
           echo "--- Compiling Java ---"
           find . -name "*.java" > build/sources.txt
-          javac -source 11 -target 11 -bootclasspath $PLATFORM_JAR -d build/obj @build/sources.txt
+          javac -source 11 -target 11 -bootclasspath android.jar -d build/obj @build/sources.txt
 
           # 3. dex化
           echo "--- Converting to Dalvik Executable ---"
