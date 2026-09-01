@@ -1,6 +1,6 @@
 package com.kakao.deviceownerapp;
 
-import android.app.PendingIntent;
+import android.app.Activity;
 import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
@@ -10,42 +10,34 @@ import android.os.Bundle;
 import android.util.Log;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
-import androidx.appcompat.app.AppCompatActivity;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends Activity {
 
+    private WebView webView;
     private DevicePolicyManager devicePolicyManager;
     private ComponentName adminComponent;
-    private WebView webView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // 面倒なXMLレイアウトは使わず、WebViewを画面いっぱいに生成
         webView = new WebView(this);
         webView.getSettings().setJavaScriptEnabled(true);
-        webView.getSettings().setDomStorageEnabled(true);
-        
-        // HTMLとJavaを接続するJavaScriptインターフェースを登録
         webView.addJavascriptInterface(new WebAppInterface(this), "AndroidBridge");
         
-        // assets/index.html を読み込み
+        // ローカルのassets/index.htmlを読み込み
         webView.loadUrl("file:///android_asset/index.html");
-
         setContentView(webView);
 
-        // デバイスポリシーマネージャーとコンポーネントの初期化
         devicePolicyManager = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
         adminComponent = new ComponentName(this, MyDeviceAdminReceiver.class);
     }
 
-    // HTMLのJavaScriptから叩かれるブリッジクラス
     public class WebAppInterface {
         Context mContext;
 
@@ -54,66 +46,51 @@ public class MainActivity extends AppCompatActivity {
         }
 
         @JavascriptInterface
-        public void missionLog(String tag, String message) {
-            Log.d("GeminiTeam [" + tag + "]", message);
-        }
-
-        @JavascriptInterface
         public boolean isDeviceOwner() {
             return devicePolicyManager.isDeviceOwnerApp(getPackageName());
         }
 
         @JavascriptInterface
-        public void setPackageHidden(String packageName, boolean hidden) {
+        public void hidePackage(String packageName, boolean hide) {
             if (devicePolicyManager.isDeviceOwnerApp(getPackageName())) {
-                devicePolicyManager.setApplicationHidden(adminComponent, packageName, hidden);
-                missionLog("ACTION", packageName + " の凍結/隠蔽ステータス変更: " + hidden);
-            } else {
-                missionLog("ERROR", "デバイスオーナー権限がありません！");
+                devicePolicyManager.setApplicationHidden(adminComponent, packageName, hide);
+                Log.d("DeviceOwner", packageName + " hidden: " + hide);
             }
         }
 
-        // デバイスオーナー権限によるAPKのサイレントインストール
         @JavascriptInterface
-        public void installApkSilently(String apkPath) {
-            if (!devicePolicyManager.isDeviceOwnerApp(getPackageName())) {
-                missionLog("ERROR", "デバイスオーナー権限がないためサイレントインストールできません！");
-                return;
-            }
-
+        public void installApk(String apkPath) {
             try {
                 File file = new File(apkPath);
-                if (!file.exists()) {
-                    missionLog("ERROR", "指定されたパスにAPKが見つかりません: " + apkPath);
-                    return;
-                }
+                if (!file.exists()) return;
 
-                PackageInstaller packageInstaller = mContext.getPackageManager().getPackageInstaller();
+                PackageInstaller packageInstaller = getPackageManager().getPackageInstaller();
                 PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(
                         PackageInstaller.SessionParams.MODE_FULL_INSTALL);
                 
                 int sessionId = packageInstaller.create(params);
-                try (OutputStream out = packageInstaller.openSession(sessionId).openWrite("package", 0, -1);
-                     InputStream in = new FileInputStream(file)) {
-                    byte[] buffer = new byte[65536];
-                    int c;
-                    while ((c = in.read(buffer)) != -1) {
-                        out.write(buffer, 0, c);
-                    }
-                    packageInstaller.openSession(sessionId).fsync(out);
+                PackageInstaller.Session session = packageInstaller.openSession(sessionId);
+                
+                OutputStream out = session.openWrite("package", 0, file.length());
+                InputStream in = new FileInputStream(file);
+                byte[] buffer = new byte[65536];
+                int c;
+                while ((c = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, c);
                 }
+                session.fsync(out);
+                in.close();
+                out.close();
 
                 Intent intent = new Intent(mContext, MainActivity.class);
-                PendingIntent pendingIntent = PendingIntent.getActivity(
-                        mContext, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                // 仮のブロードキャストインテント設定
+                session.commit(android.app.PendingIntent.getActivity(
+                        mContext, sessionId, intent, android.app.PendingIntent.FLAG_UPDATE_CURRENT).getIntentSender());
                 
-                packageInstaller.openSession(sessionId).commit(pendingIntent.getIntentSender());
-                missionLog("ACTION", "サイレントインストールのコミット成功: " + apkPath);
-
+                Log.d("DeviceOwner", "Install session committed: " + sessionId);
             } catch (Exception e) {
-                missionLog("ERROR", "サイレントインストール例外発生: " + e.getMessage());
+                Log.e("DeviceOwner", "Install failed", e);
             }
         }
     }
 }
-
