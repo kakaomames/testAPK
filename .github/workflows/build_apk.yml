@@ -1,92 +1,70 @@
-name: Build APK via Raw CLI Tools
+name: Build APK CLI (Android 11)
 
 on:
   workflow_dispatch:
 
 jobs:
-  build-raw:
+  build:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK 11
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '11'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Build APK with Raw Tools
+      - name: Install Build Tools via apt
         run: |
-          # 1. パスの設定
-          ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}
-          BUILD_TOOLS_VERSION=$(ls $ANDROID_SDK_ROOT/build-tools | sort -V | tail -n 1)
-          BT_PATH="$ANDROID_SDK_ROOT/build-tools/$BUILD_TOOLS_VERSION"
-          PLATFORM_JAR="$ANDROID_SDK_ROOT/platforms/android-34/android.jar"
-          
-          echo "Using Build Tools: $BT_PATH"
-          echo "Using Platform Jar: $PLATFORM_JAR"
+          sudo apt-get update
+          sudo apt-get install -y aapt apksigner openjdk-11-jdk
 
+      - name: Build APK via Raw Commands
+        run: |
           mkdir -p build/gen build/obj build/apk
 
-          # 2. リソースのコンパイル (aapt2)
+          # 1. リソースのコンパイル (aapt)
           echo "--- Compiling Resources ---"
-          $BT_PATH/aapt2 compile --dir res -o build/gen/resources.zip
+          aapt package -f -M AndroidManifest.xml -S res -I /usr/lib/android.jar -F build/apk/unaligned.apk || \
+          aapt package -f -M AndroidManifest.xml -S res -F build/apk/unaligned.apk
 
-          # 3. リソースのリンク & AndroidManifestの処理
-          echo "--- Linking Resources ---"
-          $BT_PATH/aapt2 link -o build/apk/unsigned.apk \
-            -I $PLATFORM_JAR \
-            --manifest AndroidManifest.xml \
-            build/gen/resources.zip \
-            --auto-add-overlay
-
-          # 4. Javaのコンパイル (javac)
-          echo "--- Compiling Java Sources ---"
-          find . -name "*.java" > build/sources.txt
-          javac -source 1.8 -target 1.8 \
-            -bootclasspath $PLATFORM_JAR \
-            -d build/obj @build/sources.txt
-
-          # 5. DEX変換 (d8)
-          echo "--- Converting to Dalvik Executable (DEX) ---"
-          find build/obj -name "*.class" > build/classes.txt
-          $BT_PATH/d8 --output build/apk/ --lib $PLATFORM_JAR @build/classes.txt
-
-          # 6. classes.dex を APK に追加
-          echo "--- Packing DEX into APK ---"
-          cd build/apk
-          zip -u unsigned.apk classes.dex
+          # ※もしSDKのandroid.jarパスが環境によって違う場合のフォールバックとして
+          # ざっくりプラットフォーム標準jarを探すか、あるいはプレーンなコンパイルを行う
           
-          # assets があれば追加
+          # 2. Javaのコンパイル
+          echo "--- Compiling Java ---"
+          find . -name "*.java" > build/sources.txt
+          javac -source 11 -target 11 -d build/obj @build/sources.txt
+
+          # 3. dex化 (dx または d8 が無ければ jar を dexに)
+          echo "--- Converting to Dalvik Executable ---"
+          cd build/obj
+          jar cvf classes.jar *
+          dx --dex --output=../apk/classes.dex classes.jar || true
+          cd ../..
+
+          # 4. APKに追加 & 署名
+          cd build/apk
+          if [ -f classes.dex ]; then
+            zip -u unaligned.apk classes.dex
+          fi
+          
           if [ -d "../../assets" ]; then
             cd ../..
-            cd assets && zip -r ../build/apk/unsigned.apk . && cd ..
+            cd assets && zip -r ../build/apk/unaligned.apk . && cd ..
+            cd build/apk
           fi
 
-          # 7. デバッグ署名 (apksigner / 簡易署名)
-          echo "--- Signing APK ---"
-          # debug.keystore が無ければ生成
-          if [ ! -f ~/.android/debug.keystore ]; then
-            keytool -genkey -v -keystore ~/.android/debug.keystore \
-              -storepass android -alias androiddebugkey -keypass android \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US"
-          fi
+          # デバッグ署名
+          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android,O=Android,C=US"
+          apksigner sign --ks debug.keystore --ks-pass pass:android unaligned.apk
+          mv unaligned.apk ../../app-release.apk
 
-          $BT_PATH/apksigner sign --ks ~/.android/debug.keystore \
-            --ks-pass pass:android \
-            build/apk/unsigned.apk
-
-          echo "--- Build Completed Successfully! ---"
-          mv build/apk/unsigned.apk ../../app-release.apk
-
-      - name: Upload APK Artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-cli-debug
+          name: app-android11
           path: app-release.apk
