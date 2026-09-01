@@ -68,7 +68,8 @@ public class MainActivity extends Activity {
                 PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(
                         PackageInstaller.SessionParams.MODE_FULL_INSTALL);
                 
-                int sessionId = packageInstaller.create(params);
+                // createSession に修正
+                int sessionId = packageInstaller.createSession(params);
                 PackageInstaller.Session session = packageInstaller.openSession(sessionId);
                 
                 OutputStream out = session.openWrite("package", 0, file.length());
@@ -83,9 +84,8 @@ public class MainActivity extends Activity {
                 out.close();
 
                 Intent intent = new Intent(mContext, MainActivity.class);
-                // 仮のブロードキャストインテント設定
                 session.commit(android.app.PendingIntent.getActivity(
-                        mContext, sessionId, intent, android.app.PendingIntent.FLAG_UPDATE_CURRENT).getIntentSender());
+                        mContext, sessionId, intent, android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_IMMUTABLE).getIntentSender());
                 
                 Log.d("DeviceOwner", "Install session committed: " + sessionId);
             } catch (Exception e) {
