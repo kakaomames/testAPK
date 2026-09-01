@@ -43,9 +43,10 @@ jobs:
           aapt package -f -M AndroidManifest.xml -S res -I $PLATFORM_JAR -F build/apk/unaligned.apk
 
           # 2. Javaのコンパイル
+          
           echo "--- Compiling Java ---"
           find . -name "*.java" > build/sources.txt
-          javac -source 11 -target 11 -bootclasspath $PLATFORM_JAR -d build/obj @build/sources.txt
+          javac --release 11 -d build/obj @build/sources.txt
 
           # 3. dex化
           echo "--- Converting to Dalvik Executable ---"
