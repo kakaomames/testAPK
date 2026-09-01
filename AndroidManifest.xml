@@ -2,7 +2,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.kakao.deviceownerapp">
 
-    <!-- デバイス管理およびパッケージ制御に必要な権限 -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
@@ -13,7 +12,6 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar">
 
-        <!-- メイン画面（WebViewコンソール） -->
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -23,7 +21,6 @@
             </intent-filter>
         </activity>
 
-        <!-- デバイス管理レシーバー（デバイスオーナーの要） -->
         <receiver
             android:name=".MyDeviceAdminReceiver"
             android:permission="android.permission.BIND_DEVICE_ADMIN"
