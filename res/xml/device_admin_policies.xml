@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-policies>
+        <!-- デバイスの強制初期化やパスワードポリシー、パッケージ制御等に必要なフラグ -->
+        <force-lock />
+        <limit-password />
+        <reset-password />
+        <watch-login />
+    </uses-policies>
+</device-admin>
+
