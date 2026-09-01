@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="Gemini Programming Team - Device Owner Control Console">
+    <meta name="author" content="カカオマメ">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="format-detection" content="telephone=no">
+    <meta name="theme-color" content="#1a1a1a">
+    <title>Gemini Programming隊 - 管理コンソール</title>
+    <style>
+        body {
+            background-color: #121212;
+            color: #00ffcc;
+            font-family: 'Courier New', monospace;
+            margin: 0;
+            padding: 16px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .logo {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            border: 2px solid #00ffcc;
+            margin-bottom: 10px;
+        }
+        h1 {
+            font-size: 1.2rem;
+            margin: 5px 0;
+        }
+        .card {
+            background: #1e1e1e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 15px;
+        }
+        input, button {
+            width: 100%;
+            padding: 10px;
+            margin-top: 8px;
+            background: #2a2a2a;
+            color: #fff;
+            border: 1px solid #00ffcc;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-family: inherit;
+        }
+        button {
+            background: #00ffcc;
+            color: #121212;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        button:active {
+            background: #00b386;
+        }
+        #logArea {
+            background: #000;
+            color: #00ff00;
+            padding: 10px;
+            font-size: 0.8rem;
+            height: 120px;
+            overflow-y: scroll;
+            border: 1px solid #444;
+            border-radius: 4px;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <img src="https://kakaomames.github.io/rei/logo.png" alt="隊ロゴ" class="logo">
+        <h1>Gemini Programming隊</h1>
+        <p style="font-size: 0.8rem; color: #888;">AQUOS wish2 制圧コントロールパネル</p>
+    </div>
+
+    <div class="card">
+        <h3>🛡️ 権限ステータス</h3>
+        <button onclick="checkOwner()">デバイスオーナー確認</button>
+        <p id="statusText" style="margin-top: 8px; font-size: 0.9rem;">未確認</p>
+    </div>
+
+    <div class="card">
+        <h3>📦 APKサイレントインストール</h3>
+        <input type="text" id="apkPathInput" placeholder="/sdcard/Download/app.apk" value="/sdcard/Download/">
+        <button onclick="installApk()">サイレントインストール実行</button>
+    </div>
+
+    <div class="card">
+        <h3>🧊 アプリ凍結・隠蔽</h3>
+        <input type="text" id="pkgInput" placeholder="パッケージ名 (例: com.nttdocomo.android...)" value="">
+        <button onclick="toggleHidePackage(true)">パッケージを隠蔽/凍結</button>
+        <button onclick="toggleHidePackage(false)" style="background:#ff5555; color:#fff;">凍結を解除</button>
+    </div>
+
+    <div class="card">
+        <h3>📜 ミッションログ</h3>
+        <div id="logArea">初期化完了... 指令を待っています。</div>
+    </div>
+
+    <script>
+        function log(tag, message) {
+            const time = new Date().toLocaleTimeString();
+            const logArea = document.getElementById('logArea');
+            logArea.innerText += `\n[${time}] [${tag}] ${message}`;
+            logArea.scrollTop = logArea.scrollHeight;
+            if (window.AndroidBridge) {
+                AndroidBridge.missionLog(tag, message);
+            }
+        }
+
+        function checkOwner() {
+            if (window.AndroidBridge) {
+                let isOwner = AndroidBridge.isDeviceOwner();
+                document.getElementById('statusText').innerText = isOwner ? "✅ デバイスオーナー有効 (完全掌握)" : "❌ 権限なし";
+                log("STATUS", "デバイスオーナー状態: " + isOwner);
+            } else {
+                log("ERROR", "AndroidBridgeが接続されていません。");
+            }
+        }
+
+        function installApk() {
+            const path = document.getElementById('apkPathInput').value;
+            if (!path) {
+                alert("APKのパスを入力してください！");
+                return;
+            }
+            log("INSTALL", "サイレントインストール要求送信: " + path);
+            if (window.AndroidBridge) {
+                AndroidBridge.installApkSilently(path);
+            }
+        }
+
+        function toggleHidePackage(hide) {
+            const pkg = document.getElementById('pkgInput').value;
+            if (!pkg) {
+                alert("パッケージ名を入力してください！");
+                return;
+            }
+            log("PACKAGE", `${pkg} の隠蔽ステータス変更 -> ${hide}`);
+            if (window.AndroidBridge) {
+                AndroidBridge.setPackageHidden(pkg, hide);
+            }
+        }
+
+        // 起動時に自動で権限チェック
+        window.onload = function() {
+            checkOwner();
+        };
+    </script>
+</body>
+</html>
+
